@@ -1,50 +1,75 @@
-from fastapi import FastAPI, HTTPException, status
+import os
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, status, Depends
 from pydantic import BaseModel
 from typing import List, Optional
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
-app = FastAPI(title="Task Manager API", version="1.0.0")
+load_dotenv()
 
-# 1. Define the data schema for incoming POST requests
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./tasks.db")
+
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+class TaskModel(Base):
+    __tablename__ = "tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+
+Base.metadata.create_all(bind=engine)
+
 class TaskCreate(BaseModel):
     title: str
     description: Optional[str] = None
 
-class Task(TaskCreate):
+class TaskResponse(TaskCreate):
     id: int
 
-# 2. In-memory storage acting as a temporary database
-fake_db: List[dict] = [
-    {"id": 1, "title": "Buy groceries", "description": "Milk, eggs, coffee"},
-    {"id": 2, "title": "Inspect tires", "description": "Check tire pressure"},
-]
+    class Config:
+        from_attributes = True
 
-# 3. GET Method: Retrieve all tasks
-@app.get("/tasks", response_model=List[Task], status_code=status.HTTP_200_OK)
-def get_all_tasks():
-    return fake_db
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-# 4. GET Method: Retrieve a single task by ID
-@app.get("/tasks/{task_id}", response_model=Task, status_code=status.HTTP_200_OK)
-def get_task(task_id: int):
-    for task in fake_db:
-        if task["id"] == task_id:
-            return task
-    raise HTTPException(status_code=404, detail="Task not found")
+app = FastAPI(title="Persistent Task Manager API")
 
-# 5. POST Method: Create a new task
-@app.post("/tasks", response_model=Task, status_code=status.HTTP_201_CREATED)
-def create_task(task_in: TaskCreate):
-    # Auto-generate a simple numeric ID
-    new_id = (max([t["id"] for t in fake_db], default=0)) + 1
-    new_task = {"id": new_id, **task_in.model_dump()}
-    fake_db.append(new_task)
-    return new_task
+@app.get("/tasks", response_model=List[TaskResponse], status_code=status.HTTP_200_OK)
+def get_all_tasks(db: Session = Depends(get_db)):
+    return db.query(TaskModel).all()
 
-# 6. DELETE Method: Remove a task by ID
+@app.get("/tasks/{task_id}", response_model=TaskResponse, status_code=status.HTTP_200_OK)
+def get_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+@app.post("/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
+def create_task(task_in: TaskCreate, db: Session = Depends(get_db)):
+    db_task = TaskModel(title=task_in.title, description=task_in.description)
+    db.add(db_task)
+    db.commit()
+    db.refresh(db_task)
+    return db_task
+
 @app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int):
-    for index, task in enumerate(fake_db):
-        if task["id"] == task_id:
-            fake_db.pop(index)
-            return None  # 204 No Content expects an empty body
-    raise HTTPException(status_code=404, detail="Task not found")
+def delete_task(task_id: int, db: Session = Depends(get_db)):
+    db_task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not db_task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    db.delete(db_task)
+    db.commit()
+    return None
