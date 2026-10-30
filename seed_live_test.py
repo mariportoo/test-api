@@ -6,7 +6,7 @@ import httpx
 # CONFIGURATION
 # ==============================================================================
 BASE_URL = "https://test-offers-api.onrender.com"
-ADMIN_KEY = "Kam9_Gem8=Zuk8"
+ADMIN_KEY = "test"
 
 
 def run_seeder():

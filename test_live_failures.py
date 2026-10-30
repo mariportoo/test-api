@@ -6,7 +6,7 @@ import httpx
 # CONFIGURATION
 # ==============================================================================
 BASE_URL = "https://test-offers-api.onrender.com"
-ADMIN_KEY = "test_admin_secret_key_123"  # Must match your Render ADMIN_SECRET_KEY
+ADMIN_KEY = "test"
 
 
 def run_failure_tests():
