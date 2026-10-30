@@ -1,75 +1,189 @@
-import os
-from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, status, Depends
-from pydantic import BaseModel
-from typing import List, Optional
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
+import copy
+from fastapi import Depends, FastAPI
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
-load_dotenv()
+from database import Base, SessionLocal, engine
+from models import ClientModel
+from security import authenticate_admin_docs, hash_password
+from routers import admin, auth, offers, portal
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./tasks.db")
-
-if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-else:
-    engine = create_engine(DATABASE_URL)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-class TaskModel(Base):
-    __tablename__ = "tasks"
-
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, nullable=False)
-    description = Column(String, nullable=True)
-
+# 1. Database Initialization & Migrations
 Base.metadata.create_all(bind=engine)
 
-class TaskCreate(BaseModel):
-    title: str
-    description: Optional[str] = None
+with engine.connect() as conn:
+    try:
+        conn.execute(text("ALTER TABLE clients ALTER COLUMN token DROP NOT NULL;"))
+        conn.commit()
+    except Exception:
+        conn.rollback()
 
-class TaskResponse(TaskCreate):
-    id: int
+    for col in [
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS email VARCHAR;",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS password_hash VARCHAR;",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS password_salt VARCHAR;",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS client_secret VARCHAR;",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP;",
+    ]:
+        try:
+            conn.execute(text(col))
+            conn.commit()
+        except Exception:
+            conn.rollback()
 
-    class Config:
-        from_attributes = True
 
-def get_db():
+def seed_default_client():
     db = SessionLocal()
     try:
-        yield db
+        cid = "GAXLneNkZ8tVqrQvgka5"
+        client = db.query(ClientModel).filter(ClientModel.client_id == cid).first()
+        p_hash, p_salt = hash_password("ClientPassword123!")
+        if not client:
+            db.add(
+                ClientModel(
+                    client_id=cid,
+                    client_secret="RmJZBsXfIldbcyFIBhmAM9lEqcEpNJjK",
+                    name="Default Test Client",
+                    email="client@example.com",
+                    password_hash=p_hash,
+                    password_salt=p_salt,
+                    must_change_password=False,
+                )
+            )
+            db.commit()
+        elif not client.email:
+            client.email = "client@example.com"
+            client.password_hash = p_hash
+            client.password_salt = p_salt
+            db.commit()
     finally:
         db.close()
 
-app = FastAPI(title="Persistent Task Manager API")
+seed_default_client()
 
-@app.get("/tasks", response_model=List[TaskResponse], status_code=status.HTTP_200_OK)
-def get_all_tasks(db: Session = Depends(get_db)):
-    return db.query(TaskModel).all()
 
-@app.get("/tasks/{task_id}", response_model=TaskResponse, status_code=status.HTTP_200_OK)
-def get_task(task_id: int, db: Session = Depends(get_db)):
-    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return task
+# 2. Application Setup
+app = FastAPI(
+    title="Offer Feed API",
+    version="6.3.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
-@app.post("/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
-def create_task(task_in: TaskCreate, db: Session = Depends(get_db)):
-    db_task = TaskModel(title=task_in.title, description=task_in.description)
-    db.add(db_task)
-    db.commit()
-    db.refresh(db_task)
-    return db_task
+# 3. Mount Routers
+app.include_router(portal.router)
+app.include_router(auth.router)
+app.include_router(offers.router)
+app.include_router(admin.router)
 
-@app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int, db: Session = Depends(get_db)):
-    db_task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
-    if not db_task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    db.delete(db_task)
-    db.commit()
-    return None
+
+# 4. Helper: Recursively Extract Schema $refs
+def extract_schema_refs(item, collected: set):
+    if isinstance(item, dict):
+        for k, v in item.items():
+            if k == "$ref" and isinstance(v, str):
+                if v.startswith("#/components/schemas/"):
+                    collected.add(v.rsplit("/", 1)[-1])
+            else:
+                extract_schema_refs(v, collected)
+    elif isinstance(item, list):
+        for elem in item:
+            extract_schema_refs(elem, collected)
+
+
+def generate_base_openapi():
+    return get_openapi(
+        title="Offer Feed API",
+        version="1.0.0",
+        routes=app.routes,
+    )
+
+
+# 5. Documentation Endpoints
+
+@app.get("/client-openapi.json", include_in_schema=False)
+def client_openapi():
+    """Public client OpenAPI specification."""
+    schema = copy.deepcopy(generate_base_openapi())
+    schema["info"]["title"] = "Client Offer Feed API"
+    schema["info"]["description"] = "Official documentation for Client Feed Updates and Token Authentication."
+
+    client_paths = {
+        path: methods
+        for path, methods in schema.get("paths", {}).items()
+        if not path.startswith("/admin") and not path.startswith("/portal")
+    }
+    schema["paths"] = client_paths
+
+    all_schemas = schema.get("components", {}).get("schemas", {})
+    referenced_schemas = set()
+    extract_schema_refs(client_paths, referenced_schemas)
+
+    resolved_schemas = set()
+    queue = list(referenced_schemas)
+    while queue:
+        current = queue.pop()
+        if current in resolved_schemas:
+            continue
+        resolved_schemas.add(current)
+        if current in all_schemas:
+            nested_refs = set()
+            extract_schema_refs(all_schemas[current], nested_refs)
+            for ref in nested_refs:
+                if ref not in resolved_schemas:
+                    queue.append(ref)
+
+    if "components" in schema and "schemas" in schema["components"]:
+        schema["components"]["schemas"] = {
+            name: definition
+            for name, definition in all_schemas.items()
+            if name in resolved_schemas
+        }
+
+    return JSONResponse(
+        content=schema,
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@app.get(
+    "/admin-openapi.json",
+    include_in_schema=False,
+    dependencies=[Depends(authenticate_admin_docs)],
+)
+def admin_openapi():
+    """Protected master OpenAPI specification."""
+    schema = copy.deepcopy(generate_base_openapi())
+    schema["info"]["title"] = "Admin Management & Master API"
+    schema["info"]["description"] = "Master administrative console for managing clients, portal, and feed operations."
+
+    return JSONResponse(
+        content=schema,
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@app.get("/docs", include_in_schema=False)
+def client_swagger_ui():
+    """Public client documentation."""
+    return get_swagger_ui_html(
+        openapi_url="/client-openapi.json",
+        title="Client Offer Feed API - Docs",
+    )
+
+
+@app.get(
+    "/admindocs",
+    include_in_schema=False,
+    dependencies=[Depends(authenticate_admin_docs)],
+)
+def admin_swagger_ui():
+    """Protected admin documentation."""
+    return get_swagger_ui_html(
+        openapi_url="/admin-openapi.json",
+        title="Admin Management API - Docs",
+    )

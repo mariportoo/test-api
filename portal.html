@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Client Developer Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .code-box { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-lg bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl p-8">
+        
+        <!-- 1. Login Section -->
+        <div id="loginSection">
+            <div class="mb-6 text-center">
+                <h1 class="text-2xl font-bold text-white tracking-tight">Client API Portal</h1>
+                <p class="text-sm text-slate-400 mt-1">Sign in with your email to access your API credentials</p>
+            </div>
+
+            <div id="loginError" class="hidden mb-4 p-3 rounded-lg bg-red-950/80 border border-red-700 text-red-200 text-sm"></div>
+
+            <form id="loginForm" onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">Email</label>
+                    <input type="email" id="email" required placeholder="client@company.com" 
+                           class="w-full px-4 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">Password</label>
+                    <input type="password" id="password" required placeholder="••••••••" 
+                           class="w-full px-4 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <button type="submit" id="submitBtn"
+                        class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 font-semibold rounded-lg shadow-lg transition duration-150">
+                    View API Credentials
+                </button>
+            </form>
+        </div>
+
+        <!-- 2. Change / Reset Password Section -->
+        <div id="resetSection" class="hidden space-y-4">
+            <div class="mb-4 text-center">
+                <h2 class="text-xl font-bold text-white tracking-tight" id="resetTitle">Set New Password</h2>
+                <p class="text-xs text-amber-300 mt-1" id="resetSubtitle">This is your first login. Please update your temporary password to proceed.</p>
+            </div>
+
+            <div id="resetError" class="hidden p-3 rounded-lg bg-red-950/80 border border-red-700 text-red-200 text-sm"></div>
+
+            <form id="resetForm" onsubmit="handlePasswordChange(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">Current / Temporary Password</label>
+                    <input type="password" id="currentPassword" required placeholder="••••••••"
+                               class="w-full px-4 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">New Password</label>
+                    <input type="password" id="newPassword" required minlength="8" placeholder="Enter new strong password"
+                               class="w-full px-4 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">Confirm New Password</label>
+                    <input type="password" id="confirmNewPassword" required minlength="8" placeholder="Confirm new password"
+                               class="w-full px-4 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <button type="submit" id="resetSubmitBtn"
+                        class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 font-semibold rounded-lg shadow-lg transition duration-150">
+                    Update Password & Continue
+                </button>
+                <button type="button" onclick="cancelPasswordChange()" id="cancelResetBtn" class="hidden w-full py-2 text-xs text-slate-400 hover:text-white">
+                    Cancel
+                </button>
+            </form>
+        </div>
+
+        <!-- 3. Dashboard Section -->
+        <div id="dashboardSection" class="hidden space-y-6">
+            <div class="flex justify-between items-start border-b border-slate-700 pb-4">
+                <div>
+                    <h2 class="text-xl font-bold text-white" id="clientName">Client Dashboard</h2>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-950 text-emerald-400 border border-emerald-800 mt-1">
+                        Active Account
+                    </span>
+                </div>
+                <div class="space-x-2 text-xs">
+                    <button onclick="promptPasswordChange()" class="text-indigo-400 hover:text-indigo-300 underline">Change Password</button>
+                    <button onclick="handleLogout()" class="text-slate-400 hover:text-white underline">Sign Out</button>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Your Client ID</label>
+                    <div class="flex">
+                        <input id="displayClientId" readonly class="code-box w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-l-lg text-emerald-400 text-sm">
+                        <button onclick="copyToClipboard('displayClientId')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-r-lg text-xs font-medium">Copy</button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Your Client Secret</label>
+                    <div class="flex">
+                        <input id="displayClientSecret" type="password" readonly class="code-box w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-l-lg text-amber-400 text-sm">
+                        <button onclick="toggleSecretVisibility()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 border-y border-slate-700 text-xs">Show</button>
+                        <button onclick="copyToClipboard('displayClientSecret')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-r-lg text-xs font-medium">Copy</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-2 text-xs text-slate-400 space-y-2 border-t border-slate-700/60">
+                <p class="font-medium text-slate-300">How to authenticate:</p>
+                <p>1. Call <span class="code-box text-indigo-400">POST /auth/token</span> with your Client ID and Client Secret to get an access token.</p>
+                <p>2. Send the token in header <span class="code-box text-indigo-400">X-Token: &lt;access_token&gt;</span> to update or retrieve offers.</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let currentClientData = null;
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const errBox = document.getElementById("loginError");
+            const btn = document.getElementById("submitBtn");
+            errBox.classList.add("hidden");
+            btn.innerText = "Authenticating...";
+            btn.disabled = true;
+
+            const email = document.getElementById("email").value;
+            const password = document.getElementById("password").value;
+
+            try {
+                const res = await fetch("/portal/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || "Authentication failed");
+
+                currentClientData = data;
+
+                if (data.must_change_password) {
+                    document.getElementById("loginSection").classList.add("hidden");
+                    document.getElementById("resetSection").classList.remove("hidden");
+                    document.getElementById("resetTitle").innerText = "First Login: Set Password";
+                    document.getElementById("resetSubtitle").innerText = "Please update your temporary password to access your credentials.";
+                    document.getElementById("cancelResetBtn").classList.add("hidden");
+                    document.getElementById("currentPassword").value = password;
+                } else {
+                    showDashboard(data);
+                }
+            } catch (err) {
+                errBox.innerText = err.message;
+                errBox.classList.remove("hidden");
+            } finally {
+                btn.innerText = "View API Credentials";
+                btn.disabled = false;
+            }
+        }
+
+        function showDashboard(data) {
+            document.getElementById("loginSection").classList.add("hidden");
+            document.getElementById("resetSection").classList.add("hidden");
+            document.getElementById("dashboardSection").classList.remove("hidden");
+            document.getElementById("clientName").innerText = data.name || "Client Credentials";
+            document.getElementById("displayClientId").value = data.client_id;
+            document.getElementById("displayClientSecret").value = data.client_secret;
+        }
+
+        function promptPasswordChange() {
+            document.getElementById("dashboardSection").classList.add("hidden");
+            document.getElementById("resetSection").classList.remove("hidden");
+            document.getElementById("resetTitle").innerText = "Change Your Password";
+            document.getElementById("resetSubtitle").innerText = "Enter your current password and choose a new one.";
+            document.getElementById("cancelResetBtn").classList.remove("hidden");
+            document.getElementById("currentPassword").value = "";
+            document.getElementById("newPassword").value = "";
+            document.getElementById("confirmNewPassword").value = "";
+        }
+
+        function cancelPasswordChange() {
+            document.getElementById("resetSection").classList.add("hidden");
+            document.getElementById("dashboardSection").classList.remove("hidden");
+        }
+
+        async function handlePasswordChange(e) {
+            e.preventDefault();
+            const errBox = document.getElementById("resetError");
+            const btn = document.getElementById("resetSubmitBtn");
+            errBox.classList.add("hidden");
+
+            const current_password = document.getElementById("currentPassword").value;
+            const new_password = document.getElementById("newPassword").value;
+            const confirm_password = document.getElementById("confirmNewPassword").value;
+
+            if (new_password !== confirm_password) {
+                errBox.innerText = "New passwords do not match.";
+                errBox.classList.remove("hidden");
+                return;
+            }
+
+            btn.innerText = "Updating...";
+            btn.disabled = true;
+
+            try {
+                const res = await fetch("/portal/change-password", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        email: currentClientData.email,
+                        current_password: current_password,
+                        new_password: new_password
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || "Password update failed");
+
+                currentClientData.must_change_password = false;
+                showDashboard(currentClientData);
+                alert("Password updated successfully!");
+            } catch (err) {
+                errBox.innerText = err.message;
+                errBox.classList.remove("hidden");
+            } finally {
+                btn.innerText = "Update Password & Continue";
+                btn.disabled = false;
+            }
+        }
+
+        function handleLogout() {
+            currentClientData = null;
+            document.getElementById("email").value = "";
+            document.getElementById("password").value = "";
+            document.getElementById("dashboardSection").classList.add("hidden");
+            document.getElementById("resetSection").classList.add("hidden");
+            document.getElementById("loginSection").classList.remove("hidden");
+        }
+
+        function toggleSecretVisibility() {
+            const el = document.getElementById("displayClientSecret");
+            el.type = el.type === "password" ? "text" : "password";
+        }
+
+        function copyToClipboard(id) {
+            const copyText = document.getElementById(id);
+            navigator.clipboard.writeText(copyText.value);
+            alert("Copied to clipboard!");
+        }
+    </script>
+</body>
+</html>
