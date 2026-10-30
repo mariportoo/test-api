@@ -2,7 +2,7 @@
 
 ![Tests](https://github.com/mariportoo/test-api/actions/workflows/test.yml/badge.svg)
 
-A modular, multi-tenant FastAPI backend designed to manage e-commerce product offer feeds. Inspired by RTB House specifications, this API supports single and bulk offer ingestion, offset-based pagination, and secure OAuth2 client credential authentication.
+A modular, multi-tenant FastAPI backend designed to manage e-commerce product offer feeds. Inspired by RTB House specifications and built with help from Gemini, this API supports single and bulk offer ingestion, offset-based pagination, and secure OAuth2 client credential authentication.
 
 ## Features
 

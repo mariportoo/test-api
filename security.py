@@ -40,17 +40,15 @@ def verify_password(password: str, salt: str, hashed: str) -> bool:
     return secrets.compare_digest(pwd_hash, hashed)
 
 
-def authenticate_admin(
-    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key"),
-    authorization: Optional[str] = Header(None),
-):
-    """Admin guard for REST API endpoints using headers."""
-    bearer = None
-    if authorization and authorization.startswith("Bearer "):
-        bearer = authorization.split("Bearer ", 1)[1].strip()
+def authenticate_admin(x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key")):
+    """Authenticate administrative requests via X-Admin-Key header."""
+    if not ADMIN_SECRET_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="ADMIN_SECRET_KEY is not configured on the server.",
+        )
 
-    provided_key = x_admin_key or bearer
-    if not provided_key or not secrets.compare_digest(provided_key, ADMIN_SECRET_KEY):
+    if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_SECRET_KEY):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unauthorized: Invalid admin credentials.",
@@ -58,16 +56,28 @@ def authenticate_admin(
     return True
 
 
-def authenticate_admin_docs(credentials: HTTPBasicCredentials = Depends(basic_security)):
-    """Browser popup guard for /admindocs and /admin-openapi.json."""
-    is_password_valid = secrets.compare_digest(credentials.password, ADMIN_SECRET_KEY)
-    is_username_valid = secrets.compare_digest(credentials.username, "admin") or secrets.compare_digest(credentials.username, ADMIN_SECRET_KEY)
+def authenticate_admin_docs(credentials: Optional[HTTPBasicCredentials] = Depends(basic_security)):
+    """Authenticate access to /admindocs via HTTP Basic Authentication."""
+    if not ADMIN_SECRET_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="ADMIN_SECRET_KEY is not configured on the server.",
+        )
 
-    # Accepts either username="admin" + password=<ADMIN_SECRET_KEY> or entering the secret key directly
-    if not (is_password_valid or (is_username_valid and not credentials.password)):
+    if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect administration credentials.",
+            detail="Administrative credentials required.",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+    correct_username = secrets.compare_digest(credentials.username, "admin")
+    correct_password = secrets.compare_digest(credentials.password, ADMIN_SECRET_KEY)
+
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid administrative credentials.",
             headers={"WWW-Authenticate": "Basic"},
         )
     return True
